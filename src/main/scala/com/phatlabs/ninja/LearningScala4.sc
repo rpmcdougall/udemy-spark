@@ -107,6 +107,15 @@ println(archersShip)                              //> Unknown
 // because 9 is evenly divisible by 3.) Do this first by iterating through all the items in the list and testing each
 // one as you go. Then, do it again by using a filter function on the list instead.
 
+  val numList = List(1,2,3,4,5,6,7,7,8,9,10,11,12,13,14,15,16,17,18,19,20)
+  for(x <- numList) {
+    if(x % 3 == 0) {
+      println(x)
+    }
+  }
+
+  val divBy3 = numList.filter((x: Int) => x % 3 == 0)
+
 // That's enough for now!
 // There is MUCH more to learn about Scala. We didn't cover many other collection types, including mutable collections.
 // And we didn't even touch on object-oriented Scala. The book "Learning Scala" from O'Reilly is great if you want to
