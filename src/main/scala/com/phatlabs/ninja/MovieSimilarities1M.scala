@@ -8,7 +8,14 @@ import java.nio.charset.CodingErrorAction
 import scala.io.Codec
 import scala.math.sqrt
 
-object MovieSimilarities {
+
+// To run on EMR successfully + output results for Star Wars:
+// aws s3 cp s3://sundog-spark/MovieSimilarities1M.jar ./
+// aws s3 cp s3://sundog-spark/ml-1m/movies.dat ./
+// spark-submit --executor-memory 1g MovieSimilarities1M.jar 260
+
+
+object MovieSimilarities1M {
   
   /** Load up a Map of movie IDs to movie names. */
   def loadMovieNames() : Map[Int, String] = {
@@ -21,9 +28,9 @@ object MovieSimilarities {
     // Create a Map of Ints to Strings, and populate it from u.item.
     var movieNames:Map[Int, String] = Map()
     
-     val lines = Source.fromFile("/Users/rpmmcdougall/dev/udemy-spark/src/main/resources/ml-100k/u.item").getLines()
+     val lines = Source.fromFile("movies.dat").getLines()
      for (line <- lines) {
-       var fields = line.split('|')
+       var fields = line.split("::")
        if (fields.length > 1) {
         movieNames += (fields(0).toInt -> fields(1))
        }
@@ -92,16 +99,19 @@ object MovieSimilarities {
     // Set the log level to only print errors
     Logger.getLogger("org").setLevel(Level.ERROR)
     
-     // Create a SparkContext using every core of the local machine
-    val sc = new SparkContext("local[*]", "MovieSimilarities")
+    // Create a SparkContext without much actual configuration
+    // We want EMR's config defaults to be used.
+    val conf = new SparkConf()
+    conf.setAppName("MovieSimilarities1M")
+    val sc = new SparkContext(conf)
     
     println("\nLoading movie names...")
     val nameDict = loadMovieNames()
     
-    val data = sc.textFile("/Users/rpmmcdougall/dev/udemy-spark/src/main/resources/ml-100k/u.data")
+    val data = sc.textFile("s3n://sundog-spark/ml-1m/ratings.dat")
 
     // Map ratings to key / value pairs: user ID => movie ID, rating
-    val ratings = data.map(l => l.split("\t")).map(l => (l(0).toInt, (l(1).toInt, l(2).toDouble)))
+    val ratings = data.map(l => l.split("::")).map(l => (l(0).toInt, (l(1).toInt, l(2).toDouble)))
     
     // Emit every movie rated together by the same user.
     // Self-join to find every combination.
@@ -113,7 +123,7 @@ object MovieSimilarities {
     val uniqueJoinedRatings = joinedRatings.filter(filterDuplicates)
 
     // Now key by (movie1, movie2) pairs.
-    val moviePairs = uniqueJoinedRatings.map(makePairs)
+    val moviePairs = uniqueJoinedRatings.map(makePairs).partitionBy(new HashPartitioner(100))
 
     // We now have (movie1, movie2) => (rating1, rating2)
     // Now collect all ratings for each movie pair and compute similarity
@@ -131,7 +141,7 @@ object MovieSimilarities {
     
     if (args.length > 0) {
       val scoreThreshold = 0.97
-      val coOccurenceThreshold = 50.0
+      val coOccurenceThreshold = 1000.0
       
       val movieID:Int = args(0).toInt
       
@@ -147,9 +157,9 @@ object MovieSimilarities {
       )
         
       // Sort by quality score.
-      val results = filteredResults.map( x => (x._2, x._1)).sortByKey(false).take(10)
+      val results = filteredResults.map( x => (x._2, x._1)).sortByKey(false).take(50)
       
-      println("\nTop 10 similar movies for " + nameDict(movieID))
+      println("\nTop 50 similar movies for " + nameDict(movieID))
       for (result <- results) {
         val sim = result._1
         val pair = result._2
